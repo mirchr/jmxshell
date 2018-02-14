@@ -1,0 +1,4 @@
+Add native user/password support
+remove call to Mbean in RemoteMBean - only install it
+add Makefile
+add example mlet file
