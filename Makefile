@@ -23,7 +23,7 @@ eviljar:
        
 mletfile:
 	@if [[ "x$(URL)" = "x" ]];then echo "Error: URL=<url> variable not passed"; exit 1;fi
-	@echo "Creating mlet file to server web/compromise.jar from $(URL)"
+	@echo "Creating mlet file to serve web/compromise.jar from $(URL)"
 	@perl -p -e 's!__URL__!$(URL)!' web/woot.template > web/woot.html
 
 clean:
