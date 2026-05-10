@@ -3,7 +3,10 @@ plugins {
 }
 
 group = 'com.jmxshell'
-version = '1.0.0'
+// Default version for local builds. The release workflow overrides this via
+// -PreleaseVersion=<X.Y.Z> (derived from the git tag) so distZip produces
+// jmxshell-<tag>-jdk<N>.zip.
+version = (project.findProperty('releaseVersion') ?: '1.0.0').toString()
 
 // Target JDK for the build. Pass -PtargetJdk=<8|11|17|21|25> to produce
 // bytecode for that release. Defaults to 8 so the no-arg build keeps the

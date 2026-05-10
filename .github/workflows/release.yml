@@ -28,6 +28,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve release version
+        id: ver
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            v="${GITHUB_REF#refs/tags/v}"
+          else
+            v="0.0.0-${GITHUB_SHA::7}"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Resolved release version: $v"
+
       - name: Set up target ${{ matrix.distribution }} JDK ${{ matrix.target }}
         uses: actions/setup-java@v4
         with:
@@ -52,8 +64,9 @@ jobs:
       - name: Build for JDK ${{ matrix.target }}
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon clean build mletFile \
+          ./gradlew --no-daemon clean build distZip mletFile \
               -PtargetJdk=${{ matrix.target }} \
+              -PreleaseVersion=${{ steps.ver.outputs.version }} \
               -PmletUrl=http://127.0.0.1:8000
 
       - name: Integration test on JDK ${{ matrix.target }}
@@ -72,19 +85,47 @@ jobs:
           chmod +x scripts/integration-test.sh
           JAVA_HOME="$target_home" scripts/integration-test.sh "${TARGET_JDK}"
 
-      - name: Stage release contents
+      - name: Verify distribution zip
         shell: bash
         run: |
-          rm -rf staging
-          mkdir -p staging/web
-          cp build/libs/jmxshell-*.jar staging/
-          cp build/web/compromise.jar staging/web/
-          ls -la staging staging/web
+          zip="build/distributions/jmxshell-${{ steps.ver.outputs.version }}-jdk${{ matrix.target }}.zip"
+          if [ ! -f "$zip" ]; then
+            echo "Expected $zip not found" >&2
+            ls -la build/distributions || true
+            exit 1
+          fi
+          unzip -l "$zip"
 
-      - name: Upload jdk${{ matrix.target }} artifact
+      - name: Upload jdk${{ matrix.target }} distribution
         uses: actions/upload-artifact@v4
         with:
           name: jmxshell-jdk${{ matrix.target }}
-          path: staging/
+          path: build/distributions/jmxshell-${{ steps.ver.outputs.version }}-jdk${{ matrix.target }}.zip
           retention-days: 30
           if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all distribution zips
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: jmxshell-jdk*
+          merge-multiple: true
+
+      - name: List release assets
+        shell: bash
+        run: ls -la dist/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/jmxshell-*-jdk*.zip
+          generate_release_notes: true
+          fail_on_unmatched_files: true
