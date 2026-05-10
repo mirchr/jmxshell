@@ -23,6 +23,15 @@ repositories {
     mavenCentral()
 }
 
+dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+}
+
 sourceSets {
     payload {
         java {
@@ -64,9 +73,12 @@ tasks.register('payloadJar', Jar) {
 }
 
 // Renders woot.html from the template. Pass -PmletUrl=<url> to bake in your
-// HTTP server URL; with no flag, a localhost placeholder is used so the
-// release zip always ships a usable woot.html (override at runtime).
-def defaultMletUrl = 'http://127.0.0.1:8000'
+// HTTP server URL; with no flag, an RFC1918 placeholder is used. The
+// placeholder is *deliberately* unreachable on most networks so a target
+// that somehow processes the shipped woot.html without the operator
+// rewriting it cannot accidentally fetch compromise.jar from a real host.
+// jmxshell rewrites this file at runtime from the --url argument anyway.
+def defaultMletUrl = 'http://10.10.10.10:8000'
 tasks.register('mletFile') {
     group = 'build'
     description = "Generates web/woot.html from the template (-PmletUrl=<url>, defaults to ${defaultMletUrl})"
