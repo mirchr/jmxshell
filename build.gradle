@@ -63,20 +63,23 @@ tasks.register('payloadJar', Jar) {
     destinationDirectory = layout.buildDirectory.dir('web')
 }
 
-// Renders woot.html from the template using -PmletUrl=<url>.
+// Renders woot.html from the template. Pass -PmletUrl=<url> to bake in your
+// HTTP server URL; with no flag, a localhost placeholder is used so the
+// release zip always ships a usable woot.html (override at runtime).
+def defaultMletUrl = 'http://127.0.0.1:8000'
 tasks.register('mletFile') {
     group = 'build'
-    description = 'Generates web/woot.html from the template (requires -PmletUrl=<url>)'
+    description = "Generates web/woot.html from the template (-PmletUrl=<url>, defaults to ${defaultMletUrl})"
     def template = file('src/main/resources/web/woot.template')
     def outputFile = layout.buildDirectory.file('web/woot.html')
     inputs.file template
-    inputs.property('mletUrl', providers.gradleProperty('mletUrl').orElse(''))
+    inputs.property('mletUrl', providers.gradleProperty('mletUrl').orElse(defaultMletUrl))
     outputs.file outputFile
     doLast {
-        def url = providers.gradleProperty('mletUrl').orNull
-        if (!url) {
-            throw new GradleException(
-                    "Missing -PmletUrl=<url>. Example: ./gradlew mletFile -PmletUrl=http://10.0.0.1:8000")
+        def supplied = providers.gradleProperty('mletUrl').orNull
+        def url = supplied ?: defaultMletUrl
+        if (!supplied) {
+            logger.warn("woot.html: -PmletUrl not set, baking placeholder ${defaultMletUrl}")
         }
         def out = outputFile.get().asFile
         out.parentFile.mkdirs()
@@ -105,31 +108,26 @@ tasks.register('targetJar', Jar) {
     destinationDirectory = layout.buildDirectory.dir('target')
 }
 
-// Convenience runner: ./gradlew runTarget [-PjmxPort=1099]
+// Convenience runner: ./gradlew runTarget [-PjmxPort=1099] [-PlHost=127.0.0.1]
 tasks.register('runTarget', JavaExec) {
     group = 'application'
-    description = 'Runs the vulnerable JMX target on 127.0.0.1:1099 (no auth, no SSL)'
+    description = 'Runs the vulnerable JMX target (defaults: 127.0.0.1:1099, no auth)'
     dependsOn tasks.named('targetClasses')
     classpath = sourceSets.target.runtimeClasspath
     mainClass = 'com.jmxshell.target.JmxTarget'
     def jmxPort = (project.findProperty('jmxPort') ?: '1099').toString()
-    systemProperty 'com.sun.management.jmxremote', 'true'
-    systemProperty 'com.sun.management.jmxremote.port', jmxPort
-    systemProperty 'com.sun.management.jmxremote.rmi.port', jmxPort
-    systemProperty 'com.sun.management.jmxremote.authenticate', 'false'
-    systemProperty 'com.sun.management.jmxremote.ssl', 'false'
-    systemProperty 'com.sun.management.jmxremote.local.only', 'false'
-    systemProperty 'java.rmi.server.hostname', '127.0.0.1'
+    def lHost = (project.findProperty('lHost') ?: '127.0.0.1').toString()
+    args = ['--lhost', lHost, '--jmxport', jmxPort]
     standardInput = System.in
 }
 
-// Bundles the client jar and compromise.jar (under web/) into one zip,
+// Bundles the client jar plus web/{compromise.jar,woot.html} into one zip,
 // with both the jmxshell version and the target JDK encoded in the filename.
 // e.g. build/distributions/jmxshell-1.0.0-jdk8.zip
 tasks.register('distZip', Zip) {
     group = 'distribution'
-    description = 'Packages jmxshell.jar and web/compromise.jar into a single zip'
-    dependsOn jar, tasks.named('payloadJar')
+    description = 'Packages jmxshell.jar and web/{compromise.jar,woot.html} into a single zip'
+    dependsOn jar, tasks.named('payloadJar'), tasks.named('mletFile')
     archiveBaseName = 'jmxshell'
     archiveVersion = project.version.toString()
     archiveClassifier = "jdk${targetJdk}"
@@ -137,6 +135,9 @@ tasks.register('distZip', Zip) {
 
     from(jar.archiveFile)
     from(tasks.named('payloadJar').flatMap { it.archiveFile }) {
+        into 'web'
+    }
+    from(tasks.named('mletFile').map { it.outputs.files }) {
         into 'web'
     }
 }

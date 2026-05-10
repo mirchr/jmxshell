@@ -80,15 +80,9 @@ else
 fi
 
 echo "==> Starting jmx-target.jar on 127.0.0.1:${JMX_PORT}"
-"$JAVA" \
-    -Dcom.sun.management.jmxremote \
-    -Dcom.sun.management.jmxremote.port="${JMX_PORT}" \
-    -Dcom.sun.management.jmxremote.rmi.port="${JMX_PORT}" \
-    -Dcom.sun.management.jmxremote.authenticate=false \
-    -Dcom.sun.management.jmxremote.ssl=false \
-    -Dcom.sun.management.jmxremote.local.only=false \
-    -Djava.rmi.server.hostname=127.0.0.1 \
-    -jar build/target/jmx-target.jar >"$WORK/target.log" 2>&1 &
+"$JAVA" -jar build/target/jmx-target.jar \
+    --lhost 127.0.0.1 --jmxport "${JMX_PORT}" \
+    >"$WORK/target.log" 2>&1 &
 TARGET_PID=$!
 
 echo "==> Serving build/web on http://127.0.0.1:${HTTP_PORT}"
