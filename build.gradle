@@ -1,0 +1,146 @@
+plugins {
+    id 'java'
+}
+
+group = 'com.jmxshell'
+version = '1.0.0'
+
+// Target JDK for the build. Pass -PtargetJdk=<8|11|17|21|25> to produce
+// bytecode for that release. Defaults to 8 so the no-arg build keeps the
+// broadest compatibility.
+def targetJdk = (project.findProperty('targetJdk') ?: '8').toString()
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(targetJdk)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+sourceSets {
+    payload {
+        java {
+            srcDirs = ['src/payload/java']
+        }
+    }
+    target {
+        java {
+            srcDirs = ['src/target/java']
+        }
+    }
+}
+
+// Main client jar — the unified executable that supports exploit and --cleanup modes.
+jar {
+    archiveBaseName = 'jmxshell'
+    manifest {
+        attributes(
+                'Main-Class': 'com.jmxshell.JmxShell',
+                'Implementation-Title': 'jmxshell',
+                'Implementation-Version': project.version,
+                'Build-Jdk-Target': targetJdk
+        )
+    }
+}
+
+// Payload jar served to the target JVM via MLet. The class name and JAR name
+// must match what the woot.html mlet definition references.
+tasks.register('payloadJar', Jar) {
+    group = 'build'
+    description = 'Builds the compromise.jar MLet payload served to the target JVM'
+    archiveBaseName = 'compromise'
+    archiveVersion = ''
+    from sourceSets.payload.output
+    manifest {
+        attributes 'Main-Class': 'com.braden.Evil'
+    }
+    destinationDirectory = layout.buildDirectory.dir('web')
+}
+
+// Renders woot.html from the template using -PmletUrl=<url>.
+tasks.register('mletFile') {
+    group = 'build'
+    description = 'Generates web/woot.html from the template (requires -PmletUrl=<url>)'
+    def template = file('src/main/resources/web/woot.template')
+    def outputFile = layout.buildDirectory.file('web/woot.html')
+    inputs.file template
+    inputs.property('mletUrl', providers.gradleProperty('mletUrl').orElse(''))
+    outputs.file outputFile
+    doLast {
+        def url = providers.gradleProperty('mletUrl').orNull
+        if (!url) {
+            throw new GradleException(
+                    "Missing -PmletUrl=<url>. Example: ./gradlew mletFile -PmletUrl=http://10.0.0.1:8000")
+        }
+        def out = outputFile.get().asFile
+        out.parentFile.mkdirs()
+        out.text = template.text.replace('__URL__', url)
+        println "Wrote ${out} for url ${url}"
+    }
+}
+
+// Standalone vulnerable JMX target for trying jmxshell locally and for the
+// integration test. Bytecode targets the same -PtargetJdk as jmxshell so the
+// matrix can prove "client and server both work on JDK N".
+tasks.register('targetJar', Jar) {
+    group = 'distribution'
+    description = 'Builds the standalone vulnerable JMX target (jmx-target.jar)'
+    archiveBaseName = 'jmx-target'
+    archiveVersion = ''
+    from sourceSets.target.output
+    manifest {
+        attributes(
+                'Main-Class': 'com.jmxshell.target.JmxTarget',
+                'Implementation-Title': 'jmx-target',
+                'Implementation-Version': project.version,
+                'Build-Jdk-Target': targetJdk
+        )
+    }
+    destinationDirectory = layout.buildDirectory.dir('target')
+}
+
+// Convenience runner: ./gradlew runTarget [-PjmxPort=1099]
+tasks.register('runTarget', JavaExec) {
+    group = 'application'
+    description = 'Runs the vulnerable JMX target on 127.0.0.1:1099 (no auth, no SSL)'
+    dependsOn tasks.named('targetClasses')
+    classpath = sourceSets.target.runtimeClasspath
+    mainClass = 'com.jmxshell.target.JmxTarget'
+    def jmxPort = (project.findProperty('jmxPort') ?: '1099').toString()
+    systemProperty 'com.sun.management.jmxremote', 'true'
+    systemProperty 'com.sun.management.jmxremote.port', jmxPort
+    systemProperty 'com.sun.management.jmxremote.rmi.port', jmxPort
+    systemProperty 'com.sun.management.jmxremote.authenticate', 'false'
+    systemProperty 'com.sun.management.jmxremote.ssl', 'false'
+    systemProperty 'com.sun.management.jmxremote.local.only', 'false'
+    systemProperty 'java.rmi.server.hostname', '127.0.0.1'
+    standardInput = System.in
+}
+
+// Bundles the client jar and compromise.jar (under web/) into one zip,
+// with both the jmxshell version and the target JDK encoded in the filename.
+// e.g. build/distributions/jmxshell-1.0.0-jdk8.zip
+tasks.register('distZip', Zip) {
+    group = 'distribution'
+    description = 'Packages jmxshell.jar and web/compromise.jar into a single zip'
+    dependsOn jar, tasks.named('payloadJar')
+    archiveBaseName = 'jmxshell'
+    archiveVersion = project.version.toString()
+    archiveClassifier = "jdk${targetJdk}"
+    destinationDirectory = layout.buildDirectory.dir('distributions')
+
+    from(jar.archiveFile)
+    from(tasks.named('payloadJar').flatMap { it.archiveFile }) {
+        into 'web'
+    }
+}
+
+assemble.dependsOn payloadJar, distZip, targetJar
+
+wrapper {
+    gradleVersion = '8.14.1'
+    distributionType = Wrapper.DistributionType.BIN
+}

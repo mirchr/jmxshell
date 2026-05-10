@@ -1,0 +1,90 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  build:
+    name: Build & integration-test ${{ matrix.distribution }} JDK ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: '8'
+            distribution: temurin
+          - target: '11'
+            distribution: temurin
+          - target: '17'
+            distribution: temurin
+          - target: '21'
+            distribution: oracle
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up target ${{ matrix.distribution }} JDK ${{ matrix.target }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ matrix.target }}
+          distribution: ${{ matrix.distribution }}
+
+      - name: Set up JDK 21 for Gradle
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Build for JDK ${{ matrix.target }}
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon clean build mletFile \
+              -PtargetJdk=${{ matrix.target }} \
+              -PmletUrl=http://127.0.0.1:8000
+
+      - name: Integration test on JDK ${{ matrix.target }}
+        shell: bash
+        env:
+          TARGET_JDK: ${{ matrix.target }}
+          SKIP_BUILD: '1'
+        run: |
+          var="JAVA_HOME_${TARGET_JDK}_X64"
+          target_home="${!var}"
+          if [ -z "$target_home" ]; then
+            echo "Could not resolve target JDK home for $var" >&2
+            exit 1
+          fi
+          "$target_home/bin/java" -version
+          chmod +x scripts/integration-test.sh
+          JAVA_HOME="$target_home" scripts/integration-test.sh "${TARGET_JDK}"
+
+      - name: Stage release contents
+        shell: bash
+        run: |
+          rm -rf staging
+          mkdir -p staging/web
+          cp build/libs/jmxshell-*.jar staging/
+          cp build/web/compromise.jar staging/web/
+          ls -la staging staging/web
+
+      - name: Upload jdk${{ matrix.target }} artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jmxshell-jdk${{ matrix.target }}
+          path: staging/
+          retention-days: 30
+          if-no-files-found: error

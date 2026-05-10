@@ -1,0 +1,7 @@
+plugins {
+    // Lets Gradle auto-provision JDKs (8/11/17/21/25) when the toolchain
+    // language version isn't already installed locally.
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.8.0'
+}
+
+rootProject.name = 'jmxshell'
