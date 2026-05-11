@@ -64,10 +64,12 @@ jobs:
       - name: Build for JDK ${{ matrix.target }}
         run: |
           chmod +x gradlew
+          # mletUrl deliberately omitted: the build.gradle default (an
+          # RFC1918 placeholder) is what we want baked into the shipped
+          # woot.html. jmxshell rewrites it at runtime from --url.
           ./gradlew --no-daemon clean build distZip mletFile \
               -PtargetJdk=${{ matrix.target }} \
-              -PreleaseVersion=${{ steps.ver.outputs.version }} \
-              -PmletUrl=http://127.0.0.1:8000
+              -PreleaseVersion=${{ steps.ver.outputs.version }}
 
       - name: Integration test on JDK ${{ matrix.target }}
         shell: bash

